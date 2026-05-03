@@ -304,7 +304,7 @@ export const AuthPage = () => {
                   await loginWithGoogle(formData.role);
                   navigate('/');
                 } catch (err: any) {
-                  if (err.message && err.message.includes('popup-closed-by-user')) {
+                  if (err.code === 'auth/popup-closed-by-user') {
                     setError('Login cancelled. Please finish the process in the popup.');
                   } else {
                     setError(err.message || 'Google login failed');

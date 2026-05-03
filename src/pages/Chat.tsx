@@ -3,9 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { storage, STORAGE_KEYS } from '../services/storage';
 import { Message, ChatThread, User } from '../types';
-import { Send, Search, User as UserIcon, MessageSquare, MoreVertical, Paperclip, Smile, Bot } from 'lucide-react';
+import { Send, Search, User as UserIcon, MessageSquare, MoreVertical, Paperclip, Smile } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { isShopOpen, getShopClosedMessage } from '../utils/shopStatus';
+// Removed isShopOpen and getShopClosedMessage imports as they were linked to bot logic
 
 export const Chat = () => {
   const [params] = useSearchParams();
@@ -96,27 +96,6 @@ export const Chat = () => {
     
     setMessages([...messages, msg]);
     setNewMessage('');
-
-    // Chatbot Auto-reply logic
-    const activeThread = threads.find(t => t.id === activeThreadId);
-    if (activeThread?.partner.id === 'sneakerx' && !isShopOpen()) {
-      setTimeout(() => {
-        const botMsg: Message = {
-          id: `msg_bot_${Date.now()}`,
-          chatId: activeThreadId,
-          senderId: 'sneakerx',
-          text: getShopClosedMessage(),
-          createdAt: new Date().toISOString()
-        };
-        storage.insertOne(STORAGE_KEYS.MESSAGES, botMsg);
-        storage.updateOne<ChatThread>(STORAGE_KEYS.CHATS, activeThreadId, { 
-          lastMessage: botMsg.text,
-          updatedAt: new Date().toISOString()
-        });
-        // The polling will pick it up, but we can also update local state for immediate feedback
-        setMessages(prev => [...prev, botMsg]);
-      }, 1000);
-    }
   };
 
   const activeThread = threads.find(t => t.id === activeThreadId);
@@ -154,13 +133,7 @@ export const Chat = () => {
               >
                 <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-black relative flex-shrink-0">
                   {thread.partner.name.charAt(0)}
-                  {thread.partner.id === 'sneakerx' && !isShopOpen() ? (
-                    <div className="absolute bottom-0 right-0 w-4 h-4 bg-amber-500 border-2 border-white dark:border-black rounded-full flex items-center justify-center">
-                      <Bot className="h-2 w-2 text-white" />
-                    </div>
-                  ) : (
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
-                  )}
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
                 </div>
                 <div className="ml-4 text-left min-w-0">
                   <div className="flex justify-between items-center">
@@ -197,17 +170,10 @@ export const Chat = () => {
                   </div>
                   <div className="ml-3">
                     <p className="font-bold text-gray-900 dark:text-white leading-none">{activeThread.partner.name}</p>
-                    {activeThread.partner.id === 'sneakerx' && !isShopOpen() ? (
-                      <p className="text-[10px] text-amber-500 font-black tracking-wide uppercase mt-1 flex items-center">
-                        <Bot className="h-3 w-3 mr-1" />
-                        Automated Assistant Active
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-emerald-500 font-black tracking-wide uppercase mt-1 flex items-center">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
-                        Active Now
-                      </p>
-                    )}
+                    <p className="text-[10px] text-emerald-500 font-black tracking-wide uppercase mt-1 flex items-center">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
+                      Active Now
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">

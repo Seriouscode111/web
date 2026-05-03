@@ -63,8 +63,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setUser(userDoc.data() as User);
       }
-    } catch (error) {
-      console.error('Google Sign-In Error:', error);
+    } catch (error: any) {
+      if (error.code !== 'auth/popup-closed-by-user') {
+        console.error('Google Sign-In Error:', error);
+      }
       throw error;
     }
   };
