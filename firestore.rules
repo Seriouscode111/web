@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // User Rules
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'role', 'createdAt']) 
+             && data.id == request.auth.uid
+             && data.email is string && data.email.size() <= 200
+             && data.name is string && data.name.size() <= 200
+             && data.role in ['buyer', 'seller', 'admin']
+             && data.createdAt is string; // Should ideally be server timestamp but app uses ISO string for now
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (isOwner(userId) || existing().role == 'seller'); // Can list sellers
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming())
+                       && incoming().id == existing().id
+                       && incoming().email == existing().email
+                       && incoming().role == existing().role;
+      allow delete: if false;
+    }
+
+    // Product Rules
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'sellerId', 'name', 'price'])
+             && data.id is string
+             && data.sellerId == request.auth.uid
+             && data.name is string && data.name.size() <= 200
+             && data.price is number && data.price >= 0;
+    }
+
+    match /products/{productId} {
+      allow read: if true; // Products are public
+      allow create: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller'
+                    && isValidProduct(incoming());
+      allow update: if isSignedIn() && existing().sellerId == request.auth.uid
+                    && isValidProduct(incoming())
+                    && incoming().id == existing().id
+                    && incoming().sellerId == existing().sellerId;
+      allow delete: if isSignedIn() && existing().sellerId == request.auth.uid;
+    }
+  }
+}

@@ -301,7 +301,7 @@ export const AuthPage = () => {
                 try {
                   setError('');
                   setIsLoading(true);
-                  await loginWithGoogle();
+                  await loginWithGoogle(formData.role);
                   navigate('/');
                 } catch (err: any) {
                   if (err.message && err.message.includes('popup-closed-by-user')) {

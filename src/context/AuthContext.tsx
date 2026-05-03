@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User } from '../types';
-import { storage, STORAGE_KEYS } from '../services/storage';
+import { User, UserRole } from '../types';
+import { auth, db, signInWithGoogle as firebaseSignInWithGoogle } from '../lib/firebase';
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
@@ -9,7 +11,7 @@ interface AuthContextType {
   register: (data: Omit<User, 'id' | 'createdAt'>, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: (role?: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,61 +21,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initializing storage on first load
-    storage.init();
-    
-    const savedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (userDoc.exists()) {
+          setUser(userDoc.data() as User);
+        } else {
+          // This should handle cases where user is partially created or if we need to sync
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const loginWithGoogle = async () => {
-    // Simulate google login by picking a random buyer or creating one
-    const users = storage.get<User>(STORAGE_KEYS.USERS);
-    const buyer = users.find(u => u.role === 'buyer');
-    if (buyer) {
-      setUser(buyer);
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(buyer));
+  const loginWithGoogle = async (role: UserRole = 'buyer') => {
+    try {
+      const result = await firebaseSignInWithGoogle();
+      const firebaseUser = result.user;
+      
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        const newUser: User = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: firebaseUser.displayName || 'New User',
+          phone: firebaseUser.phoneNumber || '',
+          role: role,
+          avatar: firebaseUser.photoURL || '',
+          createdAt: new Date().toISOString(),
+          verificationStatus: role === 'seller' ? 'pending' : 'verified',
+        };
+        await setDoc(userDocRef, newUser);
+        setUser(newUser);
+      } else {
+        setUser(userDoc.data() as User);
+      }
+    } catch (error) {
+      console.error('Google Sign-In Error:', error);
+      throw error;
     }
   };
 
-  const login = async (email: string, _password?: string) => {
-    const users = storage.get<User>(STORAGE_KEYS.USERS);
-    const foundUser = users.find(u => u.email === email);
+  const login = async (email: string, password?: string) => {
+    if (!password) throw new Error('Password is required');
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const register = async (data: Omit<User, 'id' | 'createdAt'>, password?: string) => {
+    if (!password) throw new Error('Password is required');
+    const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, data.email, password);
     
-    if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(foundUser));
-    } else {
-      throw new Error('User not found');
-    }
-  };
-
-  const register = async (data: Omit<User, 'id' | 'createdAt'>, _password?: string) => {
     const newUser: User = {
       ...data,
-      id: Math.random().toString(36).substr(2, 9),
+      id: firebaseUser.uid,
       createdAt: new Date().toISOString(),
     };
 
-    storage.insertOne(STORAGE_KEYS.USERS, newUser);
+    await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
     setUser(newUser);
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newUser));
   };
 
   const logout = async () => {
+    await signOut(auth);
     setUser(null);
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
   };
 
   const updateProfile = async (updates: Partial<User>) => {
-    if (!user) return;
-    const updatedUser = { ...user, ...updates };
-    storage.updateOne<User>(STORAGE_KEYS.USERS, user.id, updates);
-    setUser(updatedUser);
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedUser));
+    if (!auth.currentUser) return;
+    const userDocRef = doc(db, 'users', auth.currentUser.uid);
+    await updateDoc(userDocRef, updates);
+    setUser(prev => prev ? { ...prev, ...updates } : null);
   };
 
   return (
